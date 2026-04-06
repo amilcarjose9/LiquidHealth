@@ -6,54 +6,83 @@
 //
 import SwiftUI
 import SwiftData
-
 @main
 struct LiquidHealthApp: App {
+    @State private var isOnboardingComplete: Bool = false
+    @State private var isCheckingFirstLaunch: Bool = true
     
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            ZStack {
+                if isCheckingFirstLaunch {
+                    // Show loading screen while checking first launch status
+                    LoadingView()
+                } else if !isOnboardingComplete {
+                    // Show onboarding for first-time users
+                    OnboardingView(isOnboardingComplete: $isOnboardingComplete)
+                } else {
+                    // Show main app
+                    ContentView()
+                }
+            }
         }
         .modelContainer(for: [UserSettings.self, IntakeEntry.self]) { result in
             switch result {
             case .success(let container):
-                // Preload default user settings if none exist
-                preloadDefaultSettingsIfNeeded(in: container)
+                // Check if this is first launch
+                checkFirstLaunchStatus(in: container)
             case .failure(let error):
                 print("Failed to initialize ModelContainer: \(error.localizedDescription)")
+                isCheckingFirstLaunch = false
             }
         }
     }
     
-    /// Preloads default UserSettings if the database is empty (first launch)
-    private func preloadDefaultSettingsIfNeeded(in container: ModelContainer) {
+    /// Checks if UserSettings exist to determine first launch status
+    private func checkFirstLaunchStatus(in container: ModelContainer) {
         let context = container.mainContext
-        
-        // Check if any UserSettings exist
         let fetchDescriptor = FetchDescriptor<UserSettings>()
         
         do {
             let existingSettings = try context.fetch(fetchDescriptor)
             
-            // If no settings exist, create default settings
-            if existingSettings.isEmpty {
-                let defaultSettings = UserSettings(
-                    waterGoalOz: 64.0,           // 8 cups (8oz each)
-                    caffeineLimitMg: 400.0,      // FDA recommended max
-                    wakeUpTime: Calendar.current.date(bySettingHour: 7, minute: 0, second: 0, of: Date()) ?? Date(),
-                    bedTime: Calendar.current.date(bySettingHour: 23, minute: 0, second: 0, of: Date()) ?? Date(),
-                    notificationsEnabled: true
-                )
-                
-                context.insert(defaultSettings)
-                
-                try context.save()
-                print("✅ Default UserSettings created successfully")
+            // If settings exist, skip onboarding
+            if !existingSettings.isEmpty {
+                print("ℹ️ UserSettings found - skipping onboarding")
+                isOnboardingComplete = true
             } else {
-                print("ℹ️ UserSettings already exist, skipping preload")
+                print("ℹ️ First launch detected - showing onboarding")
+                isOnboardingComplete = false
             }
+            
+            isCheckingFirstLaunch = false
         } catch {
-            print("❌ Error preloading default settings: \(error.localizedDescription)")
+            print("❌ Error checking first launch status: \(error.localizedDescription)")
+            isOnboardingComplete = false
+            isCheckingFirstLaunch = false
+        }
+    }
+}
+// MARK: - Loading View
+struct LoadingView: View {
+    var body: some View {
+        ZStack {
+            LinearGradient(
+                colors: [Color.blue.opacity(0.6), Color.cyan.opacity(0.4)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+            
+            VStack(spacing: 20) {
+                Image(systemName: "drop.fill")
+                    .font(.system(size: 80))
+                    .foregroundColor(.white)
+                
+                ProgressView()
+                    .tint(.white)
+                    .scaleEffect(1.5)
+            }
         }
     }
 }
