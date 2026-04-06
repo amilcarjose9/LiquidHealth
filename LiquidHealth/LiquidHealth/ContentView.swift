@@ -6,8 +6,12 @@
 //
 
 import SwiftUI
-
+import SwiftData
 struct ContentView: View {
+    @Environment(\.modelContext) private var modelContext
+    @Query private var settings: [UserSettings]
+    @Query(sort: \IntakeEntry.timestamp, order: .reverse) private var entries: [IntakeEntry]
+
     var body: some View {
         TabView {
             DashboardView()
@@ -31,4 +35,5 @@ struct ContentView: View {
 
 #Preview {
     ContentView()
+        .modelContainer(for: [UserSettings.self, IntakeEntry.self], inMemory: true)
 }
