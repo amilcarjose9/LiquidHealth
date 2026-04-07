@@ -7,19 +7,56 @@
 
 import SwiftUI
 
+// Settings screen that allows the user to configure goals and profile information
 struct SettingsView: View {
+    // Uses shared settings from the environment when available, otherwise falls back to a local guest/default settings object
+    @Environment(UserSettings.self) private var environmentSettings: UserSettings?
+    @State private var guestSettings = UserSettings()
+
+    // Main UI layout for the settings screen
     var body: some View {
+        let activeSettings = environmentSettings ?? guestSettings
+        @Bindable var settings = activeSettings
+        // Navigation container for the Settings screen
         NavigationStack {
-            VStack {
-                Image(systemName: "slider.horizontal.3")
-                    .font(.system(size: 60))
-                    .foregroundStyle(.gray)
-                    .padding(.bottom, 8)
-                
-                Text("Settings Placeholder")
-                    .font(.title2)
-                    .fontWeight(.semibold)
+            // Form layout to organize settings into sections
+            Form {
+                // Section for adjusting daily intake goals
+                Section("Daily Goals") {
+                    // Stepper to adjust daily water goal in ounces
+                    Stepper(value: $settings.waterGoalOz, in: 0...300, step: 5) {
+                        HStack {
+                            Text("Water Goal")
+                            Spacer()
+                            Text("\(Int(settings.waterGoalOz)) oz")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+
+                    // Stepper to adjust daily caffeine limit in milligrams
+                    Stepper(value: $settings.caffeineLimitMg, in: 0...500, step: 10) {
+                        HStack {
+                            Text("Caffeine Limit")
+                            Spacer()
+                            Text("\(Int(settings.caffeineLimitMg)) mg")
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                }
+
+                // Section for daily routine preferences
+                Section("Routine") {
+                    // Time picker for the user's wake-up time
+                    DatePicker("Wake Up Time", selection: $settings.wakeUpTime, displayedComponents: .hourAndMinute)
+
+                    // Time picker for the user's bedtime
+                    DatePicker("Bed Time", selection: $settings.bedTime, displayedComponents: .hourAndMinute)
+
+                    // Toggle for enabling or disabling reminders
+                    Toggle("Notifications", isOn: $settings.notificationsEnabled)
+                }
             }
+            // Title displayed in the navigation bar
             .navigationTitle("Settings")
         }
     }
@@ -27,4 +64,5 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView()
+        .environment(UserSettings())
 }
