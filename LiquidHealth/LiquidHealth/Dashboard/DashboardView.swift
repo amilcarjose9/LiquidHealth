@@ -61,6 +61,8 @@ struct DashboardView: View {
         return min(caffeineTotal / caffeineLimit, 1.0)
     }
     
+    // MARK: - State
+    @State private var isShowingLogModal = false
     
     // MARK: - UI
     
@@ -139,16 +141,19 @@ struct DashboardView: View {
             
             .navigationTitle("Dashboard")
             
-            // Add button (future modal)
+            // Add button
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        print("Add button tapped!")
+                        isShowingLogModal = true
                     }) {
                         Image(systemName: "plus.circle.fill")
                             .font(.title2)
                     }
                 }
+            }
+            .sheet(isPresented: $isShowingLogModal) {
+                LogEntryView()
             }
         }
     }
