@@ -5,120 +5,166 @@
 //  Created by Amilcar Pena Jr on 4/6/26.
 //
 
-import SwiftUI
 
-struct MockIntakeEntry: Identifiable {
-    let id = UUID()
-    let name: String
-    let amount: Double
-    let isWater: Bool
-    let time: String
-}
+import SwiftUI
+import SwiftData
 
 struct DashboardView: View {
-    // Placeholder data
-    let todayLogs = [
-        MockIntakeEntry(
-            name: "Morning Chug",
-            amount: 16.0,
-            isWater: true,
-            time: "8:00 AM"
-        ),
-        MockIntakeEntry(
-            name: "Black Coffee",
-            amount: 8.0,
-            isWater: false,
-            time: "9:30 AM"
-        ),
-        MockIntakeEntry(
-            name: "Gym Hydroflask",
-            amount: 24.0,
-            isWater: true,
-            time: "12:15 PM"
-        ),
-        MockIntakeEntry(
-            name: "Espresso Shot",
-            amount: 2.0,
-            isWater: false,
-            time: "2:00 PM"
-        ),
-    ]
-
+    
+    // MARK: - SwiftData Queries
+    
+    // Fetch all intake entries (newest first)
+    @Query(sort: \IntakeEntry.timestamp, order: .reverse)
+    private var entries: [IntakeEntry]
+    
+    // Fetch user settings (goals from onboarding)
+    @Query
+    private var settings: [UserSettings]
+    
+    
+    // MARK: - Computed Properties
+    
+    // Only today's entries
+    private var todayEntries: [IntakeEntry] {
+        entries.filter { Calendar.current.isDateInToday($0.timestamp) }
+    }
+    
+    // Total water intake today (oz)
+    private var waterTotal: Double {
+        todayEntries
+            .filter { $0.isWater }
+            .reduce(0) { $0 + $1.amountOz }
+    }
+    
+    // Total caffeine intake today (mg)
+    private var caffeineTotal: Double {
+        todayEntries.reduce(0) { $0 + $1.caffeineContentMg }
+    }
+    
+    // User goals (fallback if none saved yet)
+    private var waterGoal: Double {
+        settings.first?.waterGoalOz ?? 64.0
+    }
+    
+    private var caffeineLimit: Double {
+        settings.first?.caffeineLimitMg ?? 400.0
+    }
+    
+    
+    private var waterProgress: Double {
+        guard waterGoal > 0 else { return 0 }
+        return min(waterTotal / waterGoal, 1.0)
+    }
+    
+    private var caffeineProgress: Double {
+        guard caffeineLimit > 0 else { return 0 }
+        return min(caffeineTotal / caffeineLimit, 1.0)
+    }
+    
+    // MARK: - State
+    @State private var isShowingLogModal = false
+    
+    // MARK: - UI
+    
     var body: some View {
         NavigationStack {
             VStack {
                 BeverageTemplatesView()
                 // Progress Rings Section
+                
+                // MARK: - Progress Rings
                 HStack(spacing: 40) {
                     ProgressRingView(
-                        progress: 0.62,
+                        progress: waterProgress,
                         color: .blue,
                         icon: "drop.fill",
                         label: "Water",
-                        value: "40 / 64 oz"
+                        value: "\(String(format: "%.0f", waterTotal)) / \(String(format: "%.0f", waterGoal)) oz"
                     )
+                    
                     ProgressRingView(
-                        progress: 0.45,
+                        progress: caffeineProgress,
                         color: .brown,
                         icon: "cup.and.saucer.fill",
                         label: "Caffeine",
-                        value: "180 / 400 mg"
+                        value: "\(String(format: "%.0f", caffeineTotal)) / \(String(format: "%.0f", caffeineLimit)) mg"
                     )
                 }
                 .padding(.vertical, 20)
-
-                // SwiftUI List for Logs
+                
+                
+                // MARK: - Today's Intake List
                 List {
                     Section(header: Text("Today's Intake")) {
-                        ForEach(todayLogs) { log in
-                            HStack {
-                                // Dynamic icon based on drink type
-                                Image(
-                                    systemName: log.isWater
-                                        ? "drop.fill" : "cup.and.saucer.fill"
-                                )
-                                .foregroundColor(log.isWater ? .blue : .brown)
-                                .frame(width: 30)
-
-                                VStack(alignment: .leading) {
-                                    Text(log.name)
-                                        .font(.headline)
-                                    Text(log.time)
-                                        .font(.caption)
-                                        .foregroundColor(.secondary)
+                        
+                        // Empty state
+                        if todayEntries.isEmpty {
+                            Text("No intake logged yet today.")
+                                .foregroundColor(.secondary)
+                        } else {
+                            
+                            // Real entries from database
+                            ForEach(todayEntries) { entry in
+                                HStack {
+                                    
+                                    
+                                    Image(systemName: entry.isWater ? "drop.fill" : "cup.and.saucer.fill")
+                                        .foregroundColor(entry.isWater ? .blue : .brown)
+                                        .frame(width: 30)
+                                    
+                                   
+                                    VStack(alignment: .leading) {
+                                        Text(entry.beverageName)
+                                            .font(.headline)
+                                        
+                                        Text(entry.formattedTime)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                    
+                                    Spacer()
+                                    
+                                    
+                                    Text(
+                                        entry.isWater
+                                        ? String(format: "%.0f oz", entry.amountOz)
+                                        : String(format: "%.0f mg", entry.caffeineContentMg)
+                                    )
+                                    .fontWeight(.bold)
                                 }
-
-                                Spacer()
-
-                                // Amount formatting
-                                Text(
-                                    "\(log.amount, specifier: "%.0f") \(log.isWater ? "oz" : "mg")"
-                                )
-                                .fontWeight(.bold)
                             }
                         }
                     }
                 }
                 .listStyle(.insetGrouped)
             }
+            
+            // MARK: - Navigation
+            
             .navigationTitle("Dashboard")
-
-            // Toolbar Item (Add Drink Button)
+            
+            // Add button
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button(action: {
-                        // TODO: Toggle modal state variable here later
-                        print("Add button tapped!")
+                        isShowingLogModal = true
                     }) {
                         Image(systemName: "plus.circle.fill")
                             .font(.title2)
                     }
                 }
             }
+            .sheet(isPresented: $isShowingLogModal) {
+                LogEntryView()
+            }
         }
     }
 }
 
+
+// MARK: - Preview
+
 #Preview {
     DashboardView()
+        .modelContainer(for: [UserSettings.self, IntakeEntry.self], inMemory: true)
 }
