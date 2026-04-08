@@ -47,6 +47,7 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             VStack {
+                BeverageTemplatesView()
                 // Progress Rings Section
                 HStack(spacing: 40) {
                     ProgressRingView(
