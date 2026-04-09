@@ -7,32 +7,64 @@
 
 
 import SwiftUI
+import SwiftData
+import Charts
 
-// Model for a single history entry (mock data for now)
-struct HistoryEntry: Identifiable {
+struct DailyWaterData: Identifiable {
     let id = UUID()
-    let title: String
-    let amount: String
-    let timestamp: Date
+    let date: Date
+    let totalOz: Double
+    let goalOz: Double
+    
+    var dayLabel: String {
+        date.formatted(.dateTime.weekday(.abbreviated))
+    }
 }
 
 // Main History screen displaying a list of intake logs grouped by date
 struct HistoryView: View {
     
-    // Temporary mock data (will be replaced with real data later)
-    @State private var entries: [HistoryEntry] = [
-        HistoryEntry(title: "Water", amount: "500 ml", timestamp: Calendar.current.date(byAdding: .hour, value: -2, to: Date()) ?? Date()),
-        HistoryEntry(title: "Juice", amount: "250 ml", timestamp: Calendar.current.date(byAdding: .hour, value: -5, to: Date()) ?? Date()),
-        HistoryEntry(title: "Protein Shake", amount: "300 ml", timestamp: Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date())
-    ]
-
+    @Environment(\.modelContext) private var modelContext
+    
+    // Fetch all intake entries (newest first)
+    @Query(sort: \IntakeEntry.timestamp, order: .reverse)
+    private var entries: [IntakeEntry]
+    
+    // Fetch user settings (used for daily water goal)
+    @Query
+    private var settings: [UserSettings]
+    
+    // Default to 64 oz if no user settings exist yet
+    private var waterGoal: Double {
+        settings.first?.waterGoalOz ?? 64.0
+    }
+    
+    // Aggregates total water intake for the last 7 days
+    private var weeklyWaterData: [DailyWaterData] {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: Date())
+        
+        return (0..<7).reversed().map { offset in
+            let day = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
+            
+            // Sum water intake for a specific day
+            let total = entries
+                .filter {
+                    $0.isWater &&
+                    calendar.isDate($0.timestamp, inSameDayAs: day)
+                }
+                .reduce(0) { $0 + $1.amountOz }
+            
+            return DailyWaterData(date: day, totalOz: total, goalOz: waterGoal)
+        }
+    }
     // Groups entries by date (Today, Yesterday, or formatted date)
-    private var groupedEntries: [(key: String, value: [HistoryEntry])] {
+    private var groupedEntries: [(key: String, value: [IntakeEntry])] {
         // Group entries by section title based on timestamp
         let grouped = Dictionary(grouping: entries) { entry in
             sectionTitle(for: entry.timestamp)
         }
-
+        
         return grouped
             .map { (key: $0.key, value: $0.value.sorted { $0.timestamp > $1.timestamp }) }
             .sorted { lhs, rhs in
@@ -41,7 +73,7 @@ struct HistoryView: View {
                 return lhsDate > rhsDate
             }
     }
-
+    
     // Returns section title based on date (Today, Yesterday, or formatted date)
     private func sectionTitle(for date: Date) -> String {
         if Calendar.current.isDateInToday(date) {
@@ -52,50 +84,86 @@ struct HistoryView: View {
             return date.formatted(.dateTime.month(.abbreviated).day().year())
         }
     }
-
+    
     // Formats time for display (e.g., 3:45 PM)
     private func timeText(for date: Date) -> String {
         date.formatted(date: .omitted, time: .shortened)
     }
-
+    
     // Handles swipe-to-delete functionality for entries
-    private func deleteEntries(at offsets: IndexSet, in sectionEntries: [HistoryEntry]) {
-        let idsToDelete = offsets.map { sectionEntries[$0].id }
-        entries.removeAll { idsToDelete.contains($0.id) }
+    private func deleteEntries(at offsets: IndexSet, in sectionEntries: [IntakeEntry]) {
+        let itemsToDelete = offsets.map { sectionEntries[$0] }
+        for entry in itemsToDelete {
+            modelContext.delete(entry)
+        }
     }
-
+    
     var body: some View {
-        // Main navigation container
         NavigationStack {
-            // List displaying grouped history entries
             List {
-                // Loop through each section (grouped by date)
-                ForEach(groupedEntries, id: \.key) { section in
-                    // Section header (Today, Yesterday, or specific date)
-                    Section(section.key) {
-                        // Loop through each entry in the section
-                        ForEach(section.value) { entry in
-                            // Row layout for each history item
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(entry.title)
-                                        .font(.headline)
-                                    Text(entry.amount)
+                // MARK: - Weekly Analytics Chart
+                Section("Weekly Water Analytics") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Last 7 Days")
+                            .font(.headline)
+
+                        Chart {
+                            ForEach(weeklyWaterData) { day in
+                                BarMark(
+                                    x: .value("Day", day.dayLabel),
+                                    y: .value("Water Intake", day.totalOz)
+                                )
+
+                                RuleMark(
+                                    y: .value("Goal", day.goalOz)
+                                )
+                                .foregroundStyle(.blue.opacity(0.4))
+                            }
+                        }
+                        .frame(height: 220)
+
+                        Text("Goal: \(Int(waterGoal)) oz per day")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 8)
+                }
+
+                // MARK: - History List
+                if entries.isEmpty {
+                    Section("History") {
+                        Text("No intake history yet.")
+                            .foregroundStyle(.secondary)
+                    }
+                } else {
+                    ForEach(groupedEntries, id: \.key) { section in
+                        Section(section.key) {
+                            ForEach(section.value) { entry in
+                                HStack {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(entry.beverageName)
+                                            .font(.headline)
+
+                                        Text(
+                                            entry.isWater
+                                            ? "\(Int(entry.amountOz)) oz"
+                                            : "\(Int(entry.caffeineContentMg)) mg"
+                                        )
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
+                                    }
+
+                                    Spacer()
+
+                                    Text(timeText(for: entry.timestamp))
+                                        .font(.caption)
+                                        .foregroundStyle(.secondary)
                                 }
-
-                                Spacer()
-
-                                Text(timeText(for: entry.timestamp))
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
+                                .padding(.vertical, 4)
                             }
-                            .padding(.vertical, 4)
-                        }
-                        // Enables swipe-to-delete for each section
-                        .onDelete { offsets in
-                            deleteEntries(at: offsets, in: section.value)
+                            .onDelete { offsets in
+                                deleteEntries(at: offsets, in: section.value)
+                            }
                         }
                     }
                 }
@@ -107,4 +175,6 @@ struct HistoryView: View {
 
 #Preview {
     HistoryView()
+        .modelContainer(for: [UserSettings.self, IntakeEntry.self], inMemory: true)
+
 }
