@@ -10,15 +10,22 @@ import SwiftUI
 import SwiftData
 import Charts
 
-struct DailyWaterData: Identifiable {
+struct DailyIntakeData: Identifiable {
     let id = UUID()
     let date: Date
     let totalOz: Double
-    let goalOz: Double
+    let totalCaffeineMg: Double
+    let waterGoalOz: Double
+    let caffeineLimitMg: Double
     
     var dayLabel: String {
         date.formatted(.dateTime.weekday(.abbreviated))
     }
+}
+
+enum ChartMode {
+    case water
+    case caffeine
 }
 
 // Main History screen displaying a list of intake logs grouped by date
@@ -34,30 +41,43 @@ struct HistoryView: View {
     @Query
     private var settings: [UserSettings]
     
+    // UI State for Chart Toggle
+    @State private var chartMode: ChartMode = .water
+        
+    // Caffeine limit default to 400 mg if no user settings exist yet
+    private var caffeineLimit: Double {
+        settings.first?.caffeineLimitMg ?? 400.0
+    }
+    
     // Default to 64 oz if no user settings exist yet
     private var waterGoal: Double {
         settings.first?.waterGoalOz ?? 64.0
     }
     
-    // Aggregates total water intake for the last 7 days
-    private var weeklyWaterData: [DailyWaterData] {
+    // Aggregates total intake for the last 7 days for BOTH water and coffee metrics
+    private var weeklyData: [DailyIntakeData] {
         let calendar = Calendar.current
         let today = calendar.startOfDay(for: Date())
         
         return (0..<7).reversed().map { offset in
             let day = calendar.date(byAdding: .day, value: -offset, to: today) ?? today
             
-            // Sum water intake for a specific day
-            let total = entries
-                .filter {
-                    $0.isWater &&
-                    calendar.isDate($0.timestamp, inSameDayAs: day)
-                }
-                .reduce(0) { $0 + $1.amountOz }
+            // Get all entries for this specific day
+            let daysEntries = entries.filter { calendar.isDate($0.timestamp, inSameDayAs: day) }
             
-            return DailyWaterData(date: day, totalOz: total, goalOz: waterGoal)
+            let totalWater = daysEntries.filter { $0.isWater }.reduce(0) { $0 + $1.amountOz }
+            let totalCaffeine = daysEntries.reduce(0) { $0 + $1.caffeineContentMg }
+            
+            return DailyIntakeData(
+                date: day,
+                totalOz: totalWater,
+                totalCaffeineMg: totalCaffeine,
+                waterGoalOz: waterGoal,
+                caffeineLimitMg: caffeineLimit
+            )
         }
     }
+    
     // Groups entries by date (Today, Yesterday, or formatted date)
     private var groupedEntries: [(key: String, value: [IntakeEntry])] {
         // Group entries by section title based on timestamp
@@ -102,27 +122,33 @@ struct HistoryView: View {
         NavigationStack {
             List {
                 // MARK: - Weekly Analytics Chart
-                Section("Weekly Water Analytics") {
+                Section("Weekly Analytics") {
                     VStack(alignment: .leading, spacing: 12) {
-                        Text("Last 7 Days")
-                            .font(.headline)
+                        
+                        Picker("Chart Metric", selection: $chartMode) {
+                            Text("Water").tag(ChartMode.water)
+                            Text("Caffeine").tag(ChartMode.caffeine)
+                        }
+                        .pickerStyle(.segmented)
+                        .padding(.bottom, 4)
 
                         Chart {
-                            ForEach(weeklyWaterData) { day in
+                            ForEach(weeklyData) { day in
                                 BarMark(
                                     x: .value("Day", day.dayLabel),
-                                    y: .value("Water Intake", day.totalOz)
+                                    y: .value("Intake", chartMode == .water ? day.totalOz : day.totalCaffeineMg)
                                 )
+                                .foregroundStyle(chartMode == .water ? .blue : .brown)
 
                                 RuleMark(
-                                    y: .value("Goal", day.goalOz)
+                                    y: .value("Goal/Limit", chartMode == .water ? day.waterGoalOz : day.caffeineLimitMg)
                                 )
-                                .foregroundStyle(.blue.opacity(0.4))
+                                .foregroundStyle((chartMode == .water ? Color.blue : Color.brown).opacity(0.4))
                             }
                         }
                         .frame(height: 220)
 
-                        Text("Goal: \(Int(waterGoal)) oz per day")
+                        Text(chartMode == .water ? "Goal: \(Int(waterGoal)) oz per day" : "Limit: \(Int(caffeineLimit)) mg per day")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -139,16 +165,25 @@ struct HistoryView: View {
                     ForEach(groupedEntries, id: \.key) { section in
                         Section(section.key) {
                             ForEach(section.value) { entry in
-                                HStack {
+                                HStack(spacing: 16) {
+                                    Image(systemName: entry.isWater ? "drop.fill" : "cup.and.saucer.fill")
+                                        .foregroundColor(entry.isWater ? .blue : .brown)
+                                        .font(.title3)
+                                        .frame(width: 24)
+                                    
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(entry.beverageName)
                                             .font(.headline)
 
-                                        Text(
-                                            entry.isWater
-                                            ? "\(Int(entry.amountOz)) oz"
-                                            : "\(Int(entry.caffeineContentMg)) mg"
-                                        )
+                                        HStack(spacing: 6) {
+                                            Text("\(Int(entry.amountOz)) oz")
+                                            
+                                            if !entry.isWater {
+                                                Text("•")
+                                                Text("\(Int(entry.caffeineContentMg)) mg")
+                                                    .foregroundColor(.brown)
+                                            }
+                                        }
                                         .font(.subheadline)
                                         .foregroundStyle(.secondary)
                                     }
