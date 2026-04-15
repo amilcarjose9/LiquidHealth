@@ -26,7 +26,7 @@ struct LiquidHealthApp: App {
                 }
             }
         }
-        .modelContainer(for: [UserSettings.self, IntakeEntry.self]) { result in
+        .modelContainer(for: [UserSettings.self, IntakeEntry.self, BeverageTemplate.self]) { result in
             switch result {
             case .success(let container):
                 // Check if this is first launch

@@ -55,6 +55,18 @@ struct SettingsView: View {
                     // Toggle for enabling or disabling reminders
                     Toggle("Notifications", isOn: $settings.notificationsEnabled)
                 }
+                
+                // MARK: - App Preferences
+                // Section for custom quick-add templates and other app settings
+                Section("Preferences") {
+                    NavigationLink(destination: BeverageTemplatesView()) {
+                        HStack {
+                            Image(systemName: "star.square.on.square.fill")
+                                .foregroundColor(.blue)
+                            Text("Manage Quick Add Templates")
+                        }
+                    }
+                }
             }
             // Title displayed in the navigation bar
             .navigationTitle("Settings")

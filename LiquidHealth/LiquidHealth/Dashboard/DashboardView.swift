@@ -69,7 +69,6 @@ struct DashboardView: View {
     var body: some View {
         NavigationStack {
             VStack {
-                BeverageTemplatesView()
                 // Progress Rings Section
                 
                 // MARK: - Progress Rings

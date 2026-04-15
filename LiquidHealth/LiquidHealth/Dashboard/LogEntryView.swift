@@ -14,6 +14,9 @@ struct LogEntryView: View {
     // Gives us access to the SwiftData database
     @Environment(\.modelContext) private var modelContext
 
+    // Fetch saved templates
+    @Query private var templates: [BeverageTemplate]
+
     // Form State
     @State private var selectedCategory: String = IntakeEntry.Category.water
     @State private var beverageName: String = "Water"
@@ -23,6 +26,46 @@ struct LogEntryView: View {
     var body: some View {
         NavigationStack {
             Form {
+                // MARK: - Quick Select Templates
+                if !templates.isEmpty {
+                    Section(header: Text("Quick Select")) {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 12) {
+                                ForEach(templates) { template in
+                                    Button(action: {
+                                        applyTemplate(template)
+                                    }) {
+                                        VStack(alignment: .leading) {
+                                            Text(template.name)
+                                                .font(.subheadline)
+                                                .bold()
+                                                .foregroundColor(.primary)
+
+                                            Text(
+                                                "\(template.amountOz, specifier: "%.0f") oz"
+                                            )
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                        }
+                                        .padding()
+                                        // Color code based on category
+                                        .background(
+                                            template.category
+                                                == IntakeEntry.Category.water
+                                                ? Color.blue.opacity(0.15)
+                                                : Color.brown.opacity(0.15)
+                                        )
+                                        .cornerRadius(12)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 8)
+                        }
+                        .listRowInsets(EdgeInsets())  // Makes the scroll view go edge-to-edge in the form
+                    }
+                }
+
                 // MARK: - Category Picker
                 Section(header: Text("Beverage Type")) {
                     Picker("Category", selection: $selectedCategory) {
@@ -30,14 +73,16 @@ struct LogEntryView: View {
                         Text("Caffeine").tag(IntakeEntry.Category.caffeine)
                     }
                     .pickerStyle(.segmented)
-                    // Auto-update defaults when swapping categories for better UX
                     .onChange(of: selectedCategory) { oldVal, newVal in
-                        if newVal == IntakeEntry.Category.water {
-                            beverageName = "Water"
-                            caffeineContentMg = 0.0
-                        } else {
-                            beverageName = "Coffee"
-                            caffeineContentMg = 95.0  // Avg coffee caffeine
+                        // Only auto-update if the user hasn't typed a custom name yet
+                        if beverageName == "Water" || beverageName == "Coffee" {
+                            if newVal == IntakeEntry.Category.water {
+                                beverageName = "Water"
+                                caffeineContentMg = 0.0
+                            } else {
+                                beverageName = "Coffee"
+                                caffeineContentMg = 95.0
+                            }
                         }
                     }
                 }
@@ -77,6 +122,17 @@ struct LogEntryView: View {
                         }
                     }
                 }
+
+                // MARK: - Save as Template
+                Section {
+                    Button(action: saveAsTemplate) {
+                        HStack {
+                            Image(systemName: "star.fill")
+                            Text("Save as Quick Add Template")
+                        }
+                    }
+                    .disabled(beverageName.isEmpty)
+                }
             }
             .navigationTitle("Log Drink")
             .navigationBarTitleDisplayMode(.inline)
@@ -99,7 +155,29 @@ struct LogEntryView: View {
         }
     }
 
-    // MARK: - Save Logic
+    // MARK: - Logic Methods
+
+    /// Auto-fills the form with data from the tapped template
+    private func applyTemplate(_ template: BeverageTemplate) {
+        selectedCategory = template.category
+        beverageName = template.name
+        amountOz = template.amountOz
+        caffeineContentMg = template.caffeineMg
+    }
+
+    /// Saves the current form state as a reusable template
+    private func saveAsTemplate() {
+        let newTemplate = BeverageTemplate(
+            category: selectedCategory,
+            name: beverageName,
+            amountOz: amountOz,
+            caffeineMg: selectedCategory == IntakeEntry.Category.water
+                ? 0.0 : caffeineContentMg
+        )
+        modelContext.insert(newTemplate)
+    }
+
+    /// Logs the actual drink to the user's daily intake
     private func saveEntry() {
         let newEntry = IntakeEntry(
             category: selectedCategory,
@@ -120,5 +198,8 @@ struct LogEntryView: View {
 
 #Preview {
     LogEntryView()
-        .modelContainer(for: IntakeEntry.self, inMemory: true)
+        .modelContainer(
+            for: [IntakeEntry.self, BeverageTemplate.self],
+            inMemory: true
+        )
 }
